@@ -46,3 +46,19 @@ A **compound** is the tyre type (for example, Soft, Medium, or Hard). A **stint*
 ## Data-science caveat
 
 A lap-time-versus-tyre-age chart is descriptive, not proof that tyre age caused the observed change. Fuel load decreases during a race, while traffic, weather, track evolution, driver pace, and Safety Car periods also affect lap time. Later cleaning and modeling phases will handle some of these effects explicitly.
+
+## Task 3: Explore laps, tyre stints, and pit laps
+
+Runnable script: `scripts/explore_race_data.py`.
+
+OpenF1 stores timing and tyre information in separate tables. The `laps` table provides `lap_number`, `lap_duration` (seconds), and `is_pit_out_lap`. The `stints` table provides `compound`, `lap_start`, `lap_end`, and `tyre_age_at_start`. The script joins these by driver and checks that each lap falls inside the stint's lap range. It calculates lap tyre age as `tyre_age_at_start + lap_number - lap_start`.
+
+The `pit` table reports `driver_number`, `lap_number`, and `pit_duration`. The script marks those driver/lap pairs as pit-stop laps, then displays a stop lap and the following lap so the outlap flag is visible beside its timing. In the Bahrain example, Verstappen's pit record is on lap 17 and lap 18 is flagged as an outlap. That outlap took 117.854 seconds, much longer than his surrounding racing laps, showing why pit-related laps need special treatment before fitting a tyre-pace model.
+
+Run it from the project root:
+
+```powershell
+python scripts/explore_race_data.py
+```
+
+The join matched all 1,129 available lap records to exactly one tyre stint in this race. This is a check for this session, not a guarantee that every race's source data will be complete or perfectly aligned.
