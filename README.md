@@ -4,7 +4,7 @@ A portfolio project that will estimate tyre degradation and simulate pit strateg
 
 ## Current phase
 
-Phase 1 — setup and exploration. See [docs/phase1.md](docs/phase1.md) for scope and decisions.
+Phase 2 — PostgreSQL schema and loading. See [docs/phase1.md](docs/phase1.md) for setup and exploration, and [docs/phase2.md](docs/phase2.md) for the database design.
 
 ## Data source
 
@@ -12,13 +12,22 @@ This project uses OpenF1 for historical F1 data. Its historical API provides ses
 
 ## Setup
 
-Requires Python 3.11 or newer. From the project root:
+Requires Python 3.11 or newer and Docker Desktop with its Linux engine running. From the project root:
 
 ```powershell
 py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-The current dependencies are Requests for HTTP calls, pandas for table-like lap data, and Matplotlib for plots. Later phases will add their own dependencies when we reach them.
+Change `POSTGRES_PASSWORD` and the password in `DATABASE_URL` in your local `.env` to the same value. `.env` is ignored by Git.
+
+Start PostgreSQL and load the sample race:
+
+```powershell
+docker compose up -d postgres
+python scripts/load_to_postgres.py
+```
+
