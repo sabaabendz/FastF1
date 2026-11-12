@@ -1,0 +1,27 @@
+# Python bytecode and virtual environments
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# FastF1 and other generated data
+.cache/
+data/cache/
+data/raw/
+
+# Generated analysis outputs
+reports/
+*.png
+*.pdf
+
+# Editor and OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
