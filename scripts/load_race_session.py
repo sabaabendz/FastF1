@@ -1,63 +1,110 @@
-﻿"""Load a completed F1 race session and report its basic lap data."""
+﻿"""Load a completed F1 race and cache its lap, stint, and pit-stop data."""
 
+from dataclasses import dataclass
+import hashlib
+import json
 from pathlib import Path
+from typing import Any
 
-import fastf1
-from fastf1.core import Session
-from fastf1.exceptions import DataNotLoadedError
+import pandas as pd
+import requests
 
 
-# Keep downloaded FastF1 files inside this project so later runs can reuse them.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = PROJECT_ROOT / "data" / "cache"
+OPENF1_API = "https://api.openf1.org/v1"
+
+
+@dataclass
+class RaceSessionData:
+    """Related data tables for one race session."""
+
+    session_info: dict[str, Any]
+    laps: pd.DataFrame
+    stints: pd.DataFrame
+    pit_stops: pd.DataFrame
+
+
+def fetch_json(
+    endpoint: str,
+    params: dict[str, str | int],
+    cache_dir: Path,
+) -> Any:
+    """Get one OpenF1 endpoint, reusing its saved JSON response when available."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_key = json.dumps(params, sort_keys=True)
+    cache_hash = hashlib.sha256(cache_key.encode("utf-8")).hexdigest()[:12]
+    cache_path = cache_dir / f"{endpoint}_{cache_hash}.json"
+
+    # Reuse the saved API response so reruns are faster and gentler on the API.
+    if cache_path.exists():
+        return json.loads(cache_path.read_text(encoding="utf-8"))
+
+    response = requests.get(
+        f"{OPENF1_API}/{endpoint}",
+        params=params,
+        timeout=30,
+    )
+    response.raise_for_status()
+    data = response.json()
+    cache_path.write_text(json.dumps(data), encoding="utf-8")
+    return data
 
 
 def load_race_session(
     year: int,
-    event: str,
-    session_type: str,
+    country_name: str,
+    session_name: str,
     cache_dir: Path,
-) -> Session:
-    """Load one session's lap data, storing downloaded data in a local cache."""
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    fastf1.Cache.configure(cache_dir=str(cache_dir))
-
-    session = fastf1.get_session(year, event, session_type)
-    # Laps are enough for our current exploration; the other data can wait.
-    session.load(
-        laps=True,
-        telemetry=False,
-        weather=False,
-        messages=False,
+) -> RaceSessionData:
+    """Load the session details, lap times, tyre stints, and pit stops."""
+    matching_sessions = fetch_json(
+        "sessions",
+        {
+            "year": year,
+            "country_name": country_name,
+            "session_name": session_name,
+        },
+        cache_dir,
     )
-    try:
-        laps = session.laps
-    except DataNotLoadedError as error:
-        # FastF1 can find the event even when it cannot access timing data.
-        raise RuntimeError(
-            "FastF1 did not return lap data. Since October 2026, archived "
-            "F1 timing data requires an F1 TV Access, Pro, or Premium account. "
-            "Authenticate with FastF1 and run this script again."
-        ) from error
-    if laps.empty:
-        raise RuntimeError("FastF1 loaded the session but returned no laps.")
-    return session
+    if not matching_sessions:
+        raise ValueError(
+            f"No {session_name} session found for {country_name} in {year}."
+        )
+
+    session_info = matching_sessions[0]
+    session_key = session_info["session_key"]
+
+    # OpenF1 uses the session key to connect all three tables to this race.
+    laps = fetch_json("laps", {"session_key": session_key}, cache_dir)
+    stints = fetch_json("stints", {"session_key": session_key}, cache_dir)
+    pit_stops = fetch_json("pit", {"session_key": session_key}, cache_dir)
+
+    return RaceSessionData(
+        session_info=session_info,
+        laps=pd.DataFrame.from_records(laps),
+        stints=pd.DataFrame.from_records(stints),
+        pit_stops=pd.DataFrame.from_records(pit_stops),
+    )
 
 
 def main() -> None:
-    session = load_race_session(
+    race = load_race_session(
         year=2024,
-        event="Bahrain",
-        session_type="R",  # R means Race.
+        country_name="Bahrain",
+        session_name="Race",
         cache_dir=CACHE_DIR,
     )
 
-    print(f"Event: {session.event['EventName']}")
-    print(f"Session: {session.name}")
-    print(f"Laps loaded: {len(session.laps)}")
-    print(f"Drivers: {session.laps['Driver'].nunique()}")
+    print(f"Event: {race.session_info['country_name']}")
+    print(f"Session: {race.session_info['session_name']}")
+    print(f"Session key: {race.session_info['session_key']}")
+    print(f"Lap records: {len(race.laps)}")
+    print(f"Tyre stints: {len(race.stints)}")
+    print(f"Pit stops: {len(race.pit_stops)}")
     print(f"Cache directory: {CACHE_DIR}")
 
 
 if __name__ == "__main__":
     main()
+
