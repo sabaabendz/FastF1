@@ -7,6 +7,7 @@ from fastf1.core import Session
 from fastf1.exceptions import DataNotLoadedError
 
 
+# Keep downloaded FastF1 files inside this project so later runs can reuse them.
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CACHE_DIR = PROJECT_ROOT / "data" / "cache"
 
@@ -22,6 +23,7 @@ def load_race_session(
     fastf1.Cache.configure(cache_dir=str(cache_dir))
 
     session = fastf1.get_session(year, event, session_type)
+    # Laps are enough for our current exploration; the other data can wait.
     session.load(
         laps=True,
         telemetry=False,
@@ -31,6 +33,7 @@ def load_race_session(
     try:
         laps = session.laps
     except DataNotLoadedError as error:
+        # FastF1 can find the event even when it cannot access timing data.
         raise RuntimeError(
             "FastF1 did not return lap data. Since October 2026, archived "
             "F1 timing data requires an F1 TV Access, Pro, or Premium account. "
@@ -45,7 +48,7 @@ def main() -> None:
     session = load_race_session(
         year=2024,
         event="Bahrain",
-        session_type="R",
+        session_type="R",  # R means Race.
         cache_dir=CACHE_DIR,
     )
 
