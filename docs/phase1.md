@@ -62,3 +62,19 @@ python scripts/explore_race_data.py
 ```
 
 The join matched all 1,129 available lap records to exactly one tyre stint in this race. This is a check for this session, not a guarantee that every race's source data will be complete or perfectly aligned.
+
+## Task 4: Plot lap time against tyre age
+
+Runnable script: `scripts/plot_tyre_degradation.py`.
+
+The chart uses one panel each for drivers 1, 16, and 44; the same color represents the same compound in every panel. Each dot is one completed lap, with tyre age on the x-axis and lap time in seconds on the y-axis. Pit-stop laps and the following outlaps are excluded because their times include pit-lane entry/exit effects rather than ordinary racing pace. Rows missing a lap time, compound, or tyre age are also omitted.
+
+Run it from the project root:
+
+```powershell
+python scripts/plot_tyre_degradation.py
+```
+
+The image is saved to `reports/lap_time_vs_tyre_age.png`. This is an initial descriptive plot, not a tyre-degradation estimate: fuel burns off, drivers encounter traffic, and track conditions change during a race. We have not corrected for those effects or filtered Safety Car and wet laps yet; those belong to the cleaning phase.
+
+The plot contains a noticeably slow first lap for Hamilton. The start lap has different conditions from a normal flying lap, so this point should not be interpreted as tyre degradation. We leave it visible here to show the source data honestly; systematic filtering and fuel correction belong to later cleaning work.
