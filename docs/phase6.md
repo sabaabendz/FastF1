@@ -9,6 +9,8 @@ The dashboard reads the generated strategy ranking from `reports/bahrain_2024_st
 - an optional filter to hide strategies that predict beyond tyre ages observed in the data;
 - summary metrics, an estimated-time scatter chart, and a ranked table.
 
+The interface uses a dark motorsport-inspired visual theme, high-contrast strategy metrics, an interactive chart with hover details, and clearer table labels. These are presentation changes only; the strategy calculations are unchanged.
+
 Run the data pipeline first, then launch Streamlit:
 
 ```powershell
@@ -44,6 +46,6 @@ docker compose down
 
 ## Verification and limits
 
-The dashboard was rendered locally with Streamlit's app runner without application errors, and its local web server returned HTTP 200. The Docker image built successfully; Docker Compose started the dashboard and PostgreSQL containers, PostgreSQL passed its health check, and the containerized dashboard returned HTTP 200. The full optional data pipeline profile was configuration-checked but not run in Docker during this step.
+The dashboard was rendered locally with Streamlit's app runner without application errors, and its local web server returned HTTP 200. The Docker image built successfully; Docker Compose started the dashboard and PostgreSQL containers, PostgreSQL passed its health check, and the containerized dashboard returned HTTP 200. The refreshed dashboard also rendered without Streamlit app errors. The full optional data pipeline profile was configuration-checked but not run in Docker during this step.
 
 The dashboard presents the Phase 5 prototype's results; it does not make their underlying assumptions more reliable. Fuel and pit loss remain estimates, and the model uses only one race. The dashboard currently supports the sample Bahrain race rather than arbitrary race selection.
