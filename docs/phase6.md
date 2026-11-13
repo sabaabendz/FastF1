@@ -16,6 +16,7 @@ Run the data pipeline first, then launch Streamlit:
 ```powershell
 python scripts/clean_race_data.py
 python scripts/simulate_pit_strategy.py
+python scripts/compare_actual_result.py
 python -m streamlit run src/f1_strategy/dashboard.py
 ```
 
@@ -34,7 +35,7 @@ docker compose --profile pipeline run --build --rm pipeline
 docker compose up --build -d dashboard
 ```
 
-Compose starts PostgreSQL and waits for its health check. The pipeline service loads the sample race, creates the cleaning audit and strategy ranking, and stores OpenF1's response cache in a named Docker volume. The dashboard then serves at `http://localhost:8501`.
+Compose starts PostgreSQL and waits for its health check. The pipeline service loads the sample race, creates the cleaning audit and strategy ranking, generates the real-race comparison, and stores OpenF1's response cache in a named Docker volume. The dashboard then serves at `http://localhost:8501`.
 
 The pipeline container uses the internal database hostname `postgres`; the local `.env` keeps `localhost` for Python scripts run directly on Windows. This lets the same project support both workflows without editing the password into source files.
 
@@ -46,6 +47,6 @@ docker compose down
 
 ## Verification and limits
 
-The dashboard was rendered locally with Streamlit's app runner without application errors, and its local web server returned HTTP 200. The Docker image built successfully; Docker Compose started the dashboard and PostgreSQL containers, PostgreSQL passed its health check, and the containerized dashboard returned HTTP 200. The refreshed dashboard also rendered without Streamlit app errors. The full optional data pipeline profile was configuration-checked but not run in Docker during this step.
+The dashboard was rendered locally with Streamlit's app runner without application errors, including the actual-race comparison, and its Docker image rebuilt successfully. The containerized dashboard returned HTTP 200, PostgreSQL passed its health check, and the optional pipeline Compose profile validated. The full data pipeline profile was not run in Docker during this step.
 
-The dashboard presents the Phase 5 prototype's results; it does not make their underlying assumptions more reliable. Fuel and pit loss remain estimates, and the model uses only one race. The dashboard currently supports the sample Bahrain race rather than arbitrary race selection.
+The dashboard presents the Phase 5 prototype's results and a retrospective comparison with the official Bahrain 2024 winner's time and strategy. It does not make the underlying assumptions more reliable. The model was trained on the same race, so this comparison is in-sample rather than an independent forecast. Fuel and pit loss remain estimates, and the model uses only one race. See [docs/actual_comparison.md](actual_comparison.md) for the result and validation limits. The dashboard currently supports the sample Bahrain race rather than arbitrary race selection.

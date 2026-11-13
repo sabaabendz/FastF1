@@ -61,4 +61,4 @@ The roughly nine-second difference does **not** establish that one stop is bette
 
 ## Phase status
 
-The Phase 5 simulator prototype is complete. Improving it further will require more race data and better pit-loss measurements. The next planned phase is the Streamlit dashboard and Docker packaging; it has not started yet.
+The Phase 5 simulator prototype is complete. Improving it further will require more race data and better pit-loss measurements. The Streamlit dashboard and Docker packaging are documented in [Phase 6](phase6.md). The retrospective comparison with the actual Bahrain 2024 winner is documented in [actual_comparison.md](actual_comparison.md); it is an in-sample sanity check, not an independent forecast.

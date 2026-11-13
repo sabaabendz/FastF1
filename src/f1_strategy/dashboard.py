@@ -9,6 +9,7 @@ import altair as alt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STRATEGY_RESULTS_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_strategy_results.csv"
+ACTUAL_COMPARISON_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_actual_comparison.csv"
 REQUIRED_COLUMNS = {
     "pit_stops",
     "pit_laps_after",
@@ -35,6 +36,14 @@ def load_strategy_results(file_path: Path) -> pd.DataFrame:
         results["pit_laps_after"].astype(str).str.split(",").str[0].astype(int)
     )
     return results
+
+
+def format_race_time(seconds: float) -> str:
+    """Format elapsed seconds as hours:minutes:seconds.milliseconds."""
+    hours = int(seconds // 3600)
+    minutes = int(seconds % 3600 // 60)
+    remaining_seconds = seconds % 60
+    return f"{hours}:{minutes:02d}:{remaining_seconds:06.3f}"
 
 
 def main() -> None:
@@ -97,6 +106,53 @@ def main() -> None:
     except (OSError, pd.errors.ParserError, ValueError) as error:
         st.error(f"Could not read the strategy results: {error}")
         st.stop()
+
+    if not ACTUAL_COMPARISON_PATH.exists():
+        st.warning(
+            "The real-race comparison has not been generated yet. Run "
+            "scripts/compare_actual_result.py after the strategy simulator."
+        )
+    else:
+        comparison = pd.read_csv(ACTUAL_COMPARISON_PATH).iloc[0]
+        st.markdown('<div class="section-kicker">Reality check · Bahrain 2024</div>', unsafe_allow_html=True)
+        st.subheader("Model replay vs. the actual race")
+        comparison_columns = st.columns(3)
+        comparison_columns[0].metric(
+            "Actual winner · Max Verstappen",
+            "1:31:44.742",
+            help="Official FIA classified race time over 57 laps.",
+        )
+        comparison_columns[1].metric(
+            "Model replay · actual strategy",
+            format_race_time(comparison["model_replay_seconds"]),
+            help="The simulator's estimate for Soft–Hard–Soft, stopping after laps 17 and 37.",
+        )
+        comparison_columns[2].metric(
+            "Replay gap",
+            f"{comparison['replay_error_seconds']:+,.3f} s",
+            delta=f"{comparison['replay_error_percent']:+.2f}% vs actual",
+            delta_color="inverse",
+            help="Positive means the model estimated a slower race time than the official result.",
+        )
+        st.markdown(
+            f"**Actual strategy:** {comparison['actual_stint_compounds'].replace('-', '–')} · "
+            f"pit after laps {comparison['actual_pit_laps_after']} · "
+            f"stints {comparison['actual_stint_lengths']} laps. "
+            f"The fastest model plan within observed tyre ages was "
+            f"**{comparison['best_supported_compounds'].replace('-', '–')}**, "
+            f"pitting after laps {comparison['best_supported_pit_laps_after']} "
+            f"(estimated {comparison['best_supported_predicted_seconds']:.3f} s)."
+        )
+        st.warning(
+            "Retrospective sanity check only: the model was trained on this same race, "
+            "including the winner's laps. Its replay is not an independent forecast, "
+            "assumes new tyres at age one, and the alternative strategy was never raced."
+        )
+        st.markdown(
+            'Sources: [FIA final race classification](https://api.fia.com/sites/default/files/doc_32_-_2024_bahrain_grand_prix_-_final_race_classification.pdf) · '
+            '[FIA race report and strategy timeline](https://api.fia.com/news/f1-verstappen-takes-bahrain-win-ahead-perez-red-bull-seal-1-2-finish)',
+            unsafe_allow_html=False,
+        )
 
     st.sidebar.markdown('<div class="eyebrow">Race controls</div>', unsafe_allow_html=True)
     st.sidebar.header("Strategy filters")

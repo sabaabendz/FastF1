@@ -43,7 +43,8 @@
       - >-
         python scripts/load_to_postgres.py &&
         python scripts/clean_race_data.py &&
-        python scripts/simulate_pit_strategy.py
+        python scripts/simulate_pit_strategy.py &&
+        python scripts/compare_actual_result.py
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-f1_strategy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-f1_strategy}
     volumes:

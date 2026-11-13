@@ -36,8 +36,9 @@ Generate the cleaning audit and strategy ranking, then start the dashboard local
 ```powershell
 python scripts/clean_race_data.py
 python scripts/simulate_pit_strategy.py
+python scripts/compare_actual_result.py
 python -m streamlit run src/f1_strategy/dashboard.py
 ```
 
-The dashboard opens at `http://localhost:8501`. See [docs/phase6.md](docs/phase6.md) for the container workflow.
+The dashboard opens at `http://localhost:8501`. It includes a retrospective comparison with Verstappen's actual Bahrain 2024 result. See [docs/actual_comparison.md](docs/actual_comparison.md) for the numbers and important validation caveats, and [docs/phase6.md](docs/phase6.md) for the container workflow.
 
