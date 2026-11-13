@@ -3,8 +3,10 @@
 from pathlib import Path
 
 import pandas as pd
+from sklearn.base import RegressorMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.dummy import DummyRegressor
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import GroupShuffleSplit
@@ -37,8 +39,8 @@ def load_model_data() -> tuple[pd.DataFrame, pd.Series, pd.Series]:
     return features, target, driver_groups
 
 
-def build_model() -> Pipeline:
-    """Create preprocessing and linear regression as one reusable pipeline."""
+def build_model(regressor: RegressorMixin) -> Pipeline:
+    """Apply the same input preparation to whichever model we compare."""
     preprocess = ColumnTransformer(
         transformers=[
             (
@@ -52,7 +54,7 @@ def build_model() -> Pipeline:
     return Pipeline(
         steps=[
             ("preprocess", preprocess),
-            ("regression", LinearRegression()),
+            ("regression", regressor),
         ]
     )
 
@@ -70,25 +72,39 @@ def main() -> None:
     test_target = target.iloc[test_indices]
     test_drivers = driver_groups.iloc[test_indices]
 
-    model = build_model()
-    model.fit(train_features, train_target)
-    predictions = model.predict(test_features)
-
     # A mean-only predictor checks whether the useful features beat a trivial guess.
     mean_baseline = DummyRegressor(strategy="mean")
     mean_baseline.fit(train_features, train_target)
     baseline_predictions = mean_baseline.predict(test_features)
 
-    model_rmse = mean_squared_error(test_target, predictions) ** 0.5
     baseline_rmse = mean_squared_error(test_target, baseline_predictions) ** 0.5
+    models = {
+        "linear": build_model(LinearRegression()),
+        "random_forest": build_model(
+            RandomForestRegressor(
+                n_estimators=300,
+                min_samples_leaf=5,
+                random_state=42,
+                n_jobs=-1,
+            )
+        ),
+    }
+    predictions_by_model = {}
+
+    for model_name, model in models.items():
+        model.fit(train_features, train_target)
+        predictions = model.predict(test_features)
+        predictions_by_model[model_name] = predictions
+        rmse = mean_squared_error(test_target, predictions) ** 0.5
+        print(f"  {model_name} MAE: {mean_absolute_error(test_target, predictions):.3f} s")
+        print(f"  {model_name} RMSE: {rmse:.3f} s")
+        print(f"  {model_name} R-squared: {r2_score(test_target, predictions):.3f}")
+
     print(f"Eligible laps: {len(features)}")
     print(f"Training laps: {len(train_indices)}")
     print(f"Test laps: {len(test_indices)}")
     print(f"Test drivers: {sorted(test_drivers.unique().astype(int).tolist())}")
     print("Metrics on drivers held out from training:")
-    print(f"  Linear regression MAE: {mean_absolute_error(test_target, predictions):.3f} s")
-    print(f"  Linear regression RMSE: {model_rmse:.3f} s")
-    print(f"  Linear regression R²: {r2_score(test_target, predictions):.3f}")
     print(f"  Mean-only baseline MAE: {mean_absolute_error(test_target, baseline_predictions):.3f} s")
     print(f"  Mean-only baseline RMSE: {baseline_rmse:.3f} s")
 
@@ -98,7 +114,8 @@ def main() -> None:
             "compound": test_features["compound"].to_numpy(),
             "tyre_age": test_features["tyre_age"].to_numpy(),
             "actual_fuel_corrected_lap_time": test_target.to_numpy(),
-            "linear_prediction": predictions,
+            "linear_prediction": predictions_by_model["linear"],
+            "random_forest_prediction": predictions_by_model["random_forest"],
             "mean_baseline_prediction": baseline_predictions,
         }
     )
