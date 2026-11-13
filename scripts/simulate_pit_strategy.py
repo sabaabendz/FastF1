@@ -1,11 +1,13 @@
 """Compare illustrative one-stop strategies for the 2024 Bahrain race."""
 
+from itertools import combinations, product
 from pathlib import Path
 
 import pandas as pd
+from sklearn.compose import ColumnTransformer
 from sklearn.linear_model import LinearRegression
-
-from train_baseline_model import build_model
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +17,7 @@ RACE_LAPS = 57
 PIT_LOSS_SECONDS = 24.8
 MIN_STINT_LAPS = 5
 COMPOUNDS = ("HARD", "SOFT")
+MAX_STOPS = 2
 
 
 def load_eligible_laps() -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -42,14 +45,44 @@ def make_stint_laps(compound: str, stint_length: int) -> pd.DataFrame:
     )
 
 
-def simulate_one_stop_strategies(
+def add_compound_age_feature(laps: pd.DataFrame) -> pd.DataFrame:
+    """Create a feature that lets Soft tyres have a different age slope."""
+    result = laps[["compound", "tyre_age"]].copy()
+    result["soft_tyre_age"] = result["tyre_age"].where(
+        result["compound"].eq("SOFT"),
+        0,
+    )
+    return result
+
+
+def build_strategy_model() -> Pipeline:
+    """Build a linear model with separate age trends for Hard and Soft."""
+    preprocessing = ColumnTransformer(
+        transformers=[
+            (
+                "compound",
+                OneHotEncoder(drop="first", handle_unknown="ignore"),
+                ["compound"],
+            ),
+            ("age_features", "passthrough", ["tyre_age", "soft_tyre_age"]),
+        ]
+    )
+    return Pipeline(
+        steps=[
+            ("preprocess", preprocessing),
+            ("regression", LinearRegression()),
+        ]
+    )
+
+
+def simulate_strategies(
     audit: pd.DataFrame,
     eligible: pd.DataFrame,
 ) -> pd.DataFrame:
-    """Fit the selected linear model and rank all two-compound one-stop plans."""
-    features = eligible[["compound", "tyre_age"]]
+    """Rank dry-race plans with one or two stops and at least two compounds."""
+    features = add_compound_age_feature(eligible)
     target = eligible["fuel_corrected_lap_time"]
-    model = build_model(LinearRegression())
+    model = build_strategy_model()
     model.fit(features, target)
 
     max_observed_age = eligible.groupby("compound")["tyre_age"].max().to_dict()
@@ -58,50 +91,61 @@ def simulate_one_stop_strategies(
         .mean()
         .to_dict()
     )
+    fuel_time_total = sum(
+        fuel_penalty_by_lap[lap_number]
+        for lap_number in range(1, RACE_LAPS + 1)
+    )
     strategies: list[dict[str, float | int | str]] = []
 
-    for first_compound in COMPOUNDS:
-        second_compound = next(
-            compound for compound in COMPOUNDS if compound != first_compound
+    for stop_count in range(1, MAX_STOPS + 1):
+        stint_count = stop_count + 1
+        candidate_pit_laps = range(
+            MIN_STINT_LAPS,
+            RACE_LAPS - MIN_STINT_LAPS + 1,
         )
-        for pit_lap in range(MIN_STINT_LAPS, RACE_LAPS - MIN_STINT_LAPS + 1):
-            first_stint_laps = pit_lap
-            second_stint_laps = RACE_LAPS - pit_lap
+        for pit_laps in combinations(candidate_pit_laps, stop_count):
+            boundaries = (0, *pit_laps, RACE_LAPS)
+            stint_lengths = tuple(
+                boundaries[index + 1] - boundaries[index]
+                for index in range(stint_count)
+            )
+            if min(stint_lengths) < MIN_STINT_LAPS:
+                continue
 
-            first_stint = make_stint_laps(first_compound, first_stint_laps)
-            second_stint = make_stint_laps(second_compound, second_stint_laps)
-            predicted_fuel_corrected = model.predict(
-                pd.concat([first_stint, second_stint], ignore_index=True)
-            )
-            estimated_fuel_penalties = [
-                fuel_penalty_by_lap[lap_number]
-                for lap_number in range(1, RACE_LAPS + 1)
-            ]
-            predicted_race_time = (
-                float(predicted_fuel_corrected.sum())
-                + sum(estimated_fuel_penalties)
-                + PIT_LOSS_SECONDS
-            )
-            extrapolated_laps = sum(
-                age > max_observed_age[compound]
-                for compound, stint_length in (
-                    (first_compound, first_stint_laps),
-                    (second_compound, second_stint_laps),
+            for compounds in product(COMPOUNDS, repeat=stint_count):
+                if len(set(compounds)) < 2:
+                    continue
+
+                stint_frames = [
+                    make_stint_laps(compound, stint_length)
+                    for compound, stint_length in zip(compounds, stint_lengths)
+                ]
+                strategy_laps = add_compound_age_feature(
+                    pd.concat(stint_frames, ignore_index=True)
                 )
-                for age in range(1, stint_length + 1)
-            )
-            strategies.append(
-                {
-                    "pit_lap": pit_lap,
-                    "first_compound": first_compound,
-                    "second_compound": second_compound,
-                    "first_stint_laps": first_stint_laps,
-                    "second_stint_laps": second_stint_laps,
-                    "predicted_race_time_seconds": predicted_race_time,
-                    "pit_loss_seconds": PIT_LOSS_SECONDS,
-                    "laps_beyond_observed_tyre_age": extrapolated_laps,
-                }
-            )
+                predicted_fuel_corrected = model.predict(strategy_laps)
+                predicted_race_time = (
+                    float(predicted_fuel_corrected.sum())
+                    + fuel_time_total
+                    + stop_count * PIT_LOSS_SECONDS
+                )
+                extrapolated_laps = sum(
+                    age > max_observed_age[compound]
+                    for compound, stint_length in zip(compounds, stint_lengths)
+                    for age in range(1, stint_length + 1)
+                )
+                strategies.append(
+                    {
+                        "pit_stops": stop_count,
+                        "pit_laps_after": ",".join(map(str, pit_laps)),
+                        "stint_compounds": "-".join(compounds),
+                        "stint_lengths": ",".join(map(str, stint_lengths)),
+                        "predicted_race_time_seconds": predicted_race_time,
+                        "pit_loss_seconds_each": PIT_LOSS_SECONDS,
+                        "laps_beyond_observed_tyre_age": extrapolated_laps,
+                        "within_observed_tyre_age": extrapolated_laps == 0,
+                    }
+                )
 
     return pd.DataFrame(strategies).sort_values(
         "predicted_race_time_seconds"
@@ -110,23 +154,33 @@ def simulate_one_stop_strategies(
 
 def main() -> None:
     audit, eligible = load_eligible_laps()
-    results = simulate_one_stop_strategies(audit, eligible)
+    results = simulate_strategies(audit, eligible)
     RESULTS_PATH.parent.mkdir(parents=True, exist_ok=True)
     results.to_csv(RESULTS_PATH, index=False)
 
     print(f"Strategies evaluated: {len(results)}")
-    print(f"Assumed pit loss: {PIT_LOSS_SECONDS:.1f} seconds")
-    print("Fastest illustrative options:")
+    print(f"Stops evaluated: 1 to {MAX_STOPS}")
+    print(f"Assumed pit loss per stop: {PIT_LOSS_SECONDS:.1f} seconds")
+    print("Fastest illustrative option (may extrapolate):")
     print(
-        results.head(5).to_string(
+        results.head(1).to_string(
             index=False,
             formatters={"predicted_race_time_seconds": "{:.3f}".format},
         )
     )
+    supported = results.loc[results["within_observed_tyre_age"]]
+    if not supported.empty:
+        print("Fastest option staying within observed tyre ages:")
+        print(
+            supported.head(1).to_string(
+                index=False,
+                formatters={"predicted_race_time_seconds": "{:.3f}".format},
+            )
+        )
     print(f"Saved full ranking: {RESULTS_PATH}")
     print(
-        "Warning: this prototype fits on one race and extrapolates beyond "
-        "observed tyre ages; treat its ranking as illustrative."
+        "Warning: the model is fitted on one race and some strategies "
+        "extrapolate beyond observed tyre ages; ranking is illustrative."
     )
 
 
