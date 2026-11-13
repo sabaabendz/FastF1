@@ -4,7 +4,7 @@ A portfolio project that will estimate tyre degradation and simulate pit strateg
 
 ## Current phase
 
-Phase 3 — data cleaning and feature preparation. See [docs/phase1.md](docs/phase1.md) for setup and exploration, [docs/phase2.md](docs/phase2.md) for the database design, and [docs/phase3.md](docs/phase3.md) for the current cleaning audit.
+Phase 4 — baseline model. See [docs/phase1.md](docs/phase1.md) for setup and exploration, [docs/phase2.md](docs/phase2.md) for the database design, [docs/phase3.md](docs/phase3.md) for cleaning and features, and [docs/phase4.md](docs/phase4.md) for the baseline model and results.
 
 ## Data source
 
