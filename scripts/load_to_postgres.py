@@ -200,7 +200,7 @@ def load_race_into_postgres(database_url: str) -> None:
 
     print(f"Loaded session {session_key} into PostgreSQL.")
     print(f"Drivers: {len(driver_numbers)}")
-    print(f"Laps: {len(lap_rows)}")
+    print(f"Lap records: {len(lap_rows)}")
     print(f"Stints: {len(stint_rows)}")
     print(f"Pit stops: {len(pit_stop_rows)}")
 
@@ -218,3 +218,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

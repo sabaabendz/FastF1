@@ -21,7 +21,7 @@ The SQL lives in `sql/schema.sql`:
 
 - `race_sessions` stores metadata once per session.
 - `drivers` identifies drivers within a session. Driver numbers can change across seasons, so the key is `(session_key, driver_number)`.
-- `laps` stores one row per driver and lap, keyed by `(session_key, driver_number, lap_number)`.
+- `laps` stores one row per driver per lap (a lap record), keyed by `(session_key, driver_number, lap_number)`.
 - `stints` stores compound and tyre age at the beginning of each stint, keyed by `(session_key, driver_number, stint_number)`.
 - `pit_stops` stores pit timing, keyed by `(session_key, driver_number, lap_number)`.
 
@@ -37,9 +37,10 @@ python scripts/load_to_postgres.py
 
 The script reuses the cached OpenF1 JSON, creates the tables, and upserts the 2024 Bahrain Race session, drivers, laps, stints, and pit stops in one database transaction. Upsert means a repeated run refreshes matching rows instead of adding duplicates. The loader converts pandas and NumPy values to regular Python values and turns missing values into SQL `NULL`.
 
-Verified in Docker Desktop with PostgreSQL 17: one session, 20 drivers, 1,129 laps, 63 stints, and 43 pit stops. I ran the loader twice; the counts stayed the same, confirming that the upserts are idempotent. To stop the database container while keeping its data volume, run `docker compose down`.
+Verified in Docker Desktop with PostgreSQL 17: one session, 20 drivers, 1,129 lap records, 63 stints, and 43 pit stops. I ran the loader twice; the counts stayed the same, confirming that the upserts are idempotent. To stop the database container while keeping its data volume, run `docker compose down`.
 
 ## Why these choices
 
 Psycopg 3 is the PostgreSQL adapter. Its binary extra includes the client library, so a separate PostgreSQL client install is not needed on the Python side. Raw SQL makes the relational schema, keys, and constraints visible for learning; an ORM can be considered later if the application grows.
+
 
