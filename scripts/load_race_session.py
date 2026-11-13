@@ -23,6 +23,8 @@ class RaceSessionData:
     laps: pd.DataFrame
     stints: pd.DataFrame
     pit_stops: pd.DataFrame
+    weather: pd.DataFrame
+    race_control: pd.DataFrame
 
 
 def fetch_json(
@@ -79,12 +81,20 @@ def load_race_session(
     laps = fetch_json("laps", {"session_key": session_key}, cache_dir)
     stints = fetch_json("stints", {"session_key": session_key}, cache_dir)
     pit_stops = fetch_json("pit", {"session_key": session_key}, cache_dir)
+    weather = fetch_json("weather", {"session_key": session_key}, cache_dir)
+    race_control = fetch_json(
+        "race_control",
+        {"session_key": session_key},
+        cache_dir,
+    )
 
     return RaceSessionData(
         session_info=session_info,
         laps=pd.DataFrame.from_records(laps),
         stints=pd.DataFrame.from_records(stints),
         pit_stops=pd.DataFrame.from_records(pit_stops),
+        weather=pd.DataFrame.from_records(weather),
+        race_control=pd.DataFrame.from_records(race_control),
     )
 
 
@@ -102,6 +112,8 @@ def main() -> None:
     print(f"Lap records: {len(race.laps)}")
     print(f"Tyre stints: {len(race.stints)}")
     print(f"Pit stops: {len(race.pit_stops)}")
+    print(f"Weather readings: {len(race.weather)}")
+    print(f"Race-control messages: {len(race.race_control)}")
     print(f"Cache directory: {CACHE_DIR}")
 
 

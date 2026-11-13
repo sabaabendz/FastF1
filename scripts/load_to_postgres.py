@@ -56,6 +56,27 @@ PIT_STOP_COLUMNS = [
     "stop_duration",
     "pit_duration",
 ]
+WEATHER_COLUMNS = [
+    "date",
+    "air_temperature",
+    "pressure",
+    "humidity",
+    "wind_direction",
+    "rainfall",
+    "wind_speed",
+    "track_temperature",
+]
+RACE_CONTROL_COLUMNS = [
+    "date",
+    "category",
+    "message",
+    "driver_number",
+    "lap_number",
+    "flag",
+    "scope",
+    "sector",
+    "qualifying_phase",
+]
 
 
 def database_value(value: Any) -> Any:
@@ -198,11 +219,59 @@ def load_race_into_postgres(database_url: str) -> None:
                 pit_stop_rows,
             )
 
+            weather_rows = []
+            for row in dataframe_rows(race.weather, WEATHER_COLUMNS):
+                rainfall = None if row[5] is None else bool(row[5])
+                weather_rows.append((session_key, *row[:5], rainfall, *row[6:]))
+            cursor.executemany(
+                """
+                INSERT INTO weather_observations (
+                    session_key, observed_at, air_temperature, pressure,
+                    humidity, wind_direction, rainfall, wind_speed,
+                    track_temperature
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (session_key, observed_at) DO UPDATE SET
+                    air_temperature = EXCLUDED.air_temperature,
+                    pressure = EXCLUDED.pressure,
+                    humidity = EXCLUDED.humidity,
+                    wind_direction = EXCLUDED.wind_direction,
+                    rainfall = EXCLUDED.rainfall,
+                    wind_speed = EXCLUDED.wind_speed,
+                    track_temperature = EXCLUDED.track_temperature
+                """,
+                weather_rows,
+            )
+
+            race_control_rows = [
+                (session_key, *row)
+                for row in dataframe_rows(race.race_control, RACE_CONTROL_COLUMNS)
+            ]
+            cursor.executemany(
+                """
+                INSERT INTO race_control_messages (
+                    session_key, observed_at, category, message,
+                    driver_number, lap_number, flag, scope, sector,
+                    qualifying_phase
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (session_key, observed_at, category, message)
+                DO UPDATE SET
+                    driver_number = EXCLUDED.driver_number,
+                    lap_number = EXCLUDED.lap_number,
+                    flag = EXCLUDED.flag,
+                    scope = EXCLUDED.scope,
+                    sector = EXCLUDED.sector,
+                    qualifying_phase = EXCLUDED.qualifying_phase
+                """,
+                race_control_rows,
+            )
+
     print(f"Loaded session {session_key} into PostgreSQL.")
     print(f"Drivers: {len(driver_numbers)}")
     print(f"Lap records: {len(lap_rows)}")
     print(f"Stints: {len(stint_rows)}")
     print(f"Pit stops: {len(pit_stop_rows)}")
+    print(f"Weather readings: {len(weather_rows)}")
+    print(f"Race-control messages: {len(race_control_rows)}")
 
 
 def main() -> None:

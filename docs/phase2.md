@@ -24,6 +24,8 @@ The SQL lives in `sql/schema.sql`:
 - `laps` stores one row per driver per lap (a lap record), keyed by `(session_key, driver_number, lap_number)`.
 - `stints` stores compound and tyre age at the beginning of each stint, keyed by `(session_key, driver_number, stint_number)`.
 - `pit_stops` stores pit timing, keyed by `(session_key, driver_number, lap_number)`.
+- `weather_observations` stores timestamped weather records, including rainfall.
+- `race_control_messages` stores timestamped flags and race-control messages, including Safety Car notices.
 
 Foreign keys connect laps, stints, and stops to a known session driver. Primary keys prevent duplicate records when we rerun the loader. Check constraints reject invalid lap numbers, stint ranges, and tyre ages. Lap-level sector times and speed traps are stored because they may help later analysis; high-frequency car telemetry is not part of this phase.
 
@@ -35,9 +37,9 @@ Run the loader from the project root:
 python scripts/load_to_postgres.py
 ```
 
-The script reuses the cached OpenF1 JSON, creates the tables, and upserts the 2024 Bahrain Race session, drivers, laps, stints, and pit stops in one database transaction. Upsert means a repeated run refreshes matching rows instead of adding duplicates. The loader converts pandas and NumPy values to regular Python values and turns missing values into SQL `NULL`.
+The script reuses the cached OpenF1 JSON, creates the tables, and upserts the 2024 Bahrain Race session, drivers, laps, stints, pit stops, weather observations, and race-control messages in one database transaction. Upsert means a repeated run refreshes matching rows instead of adding duplicates. The loader converts pandas and NumPy values to regular Python values and turns missing values into SQL `NULL`.
 
-Verified in Docker Desktop with PostgreSQL 17: one session, 20 drivers, 1,129 lap records, 63 stints, and 43 pit stops. I ran the loader twice; the counts stayed the same, confirming that the upserts are idempotent. To stop the database container while keeping its data volume, run `docker compose down`.
+Verified in Docker Desktop with PostgreSQL 17: one session, 20 drivers, 1,129 lap records, 63 stints, 43 pit stops, 157 weather observations, and 71 race-control messages. I ran the loader twice; the counts stayed the same, confirming that the upserts are idempotent. To stop the database container while keeping its data volume, run `docker compose down`.
 
 ## Why these choices
 

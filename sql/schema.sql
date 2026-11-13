@@ -62,6 +62,33 @@ CREATE TABLE IF NOT EXISTS pit_stops (
         REFERENCES drivers (session_key, driver_number) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS weather_observations (
+    session_key BIGINT NOT NULL REFERENCES race_sessions (session_key) ON DELETE CASCADE,
+    observed_at TIMESTAMPTZ NOT NULL,
+    air_temperature DOUBLE PRECISION,
+    pressure DOUBLE PRECISION,
+    humidity DOUBLE PRECISION,
+    wind_direction SMALLINT,
+    rainfall BOOLEAN,
+    wind_speed DOUBLE PRECISION,
+    track_temperature DOUBLE PRECISION,
+    PRIMARY KEY (session_key, observed_at)
+);
+
+CREATE TABLE IF NOT EXISTS race_control_messages (
+    session_key BIGINT NOT NULL REFERENCES race_sessions (session_key) ON DELETE CASCADE,
+    observed_at TIMESTAMPTZ NOT NULL,
+    category TEXT NOT NULL,
+    message TEXT NOT NULL,
+    driver_number SMALLINT,
+    lap_number SMALLINT,
+    flag TEXT,
+    scope TEXT,
+    sector SMALLINT,
+    qualifying_phase SMALLINT,
+    PRIMARY KEY (session_key, observed_at, category, message)
+);
+
 CREATE INDEX IF NOT EXISTS idx_laps_session_lap
     ON laps (session_key, lap_number);
 CREATE INDEX IF NOT EXISTS idx_stints_session_compound
