@@ -16,7 +16,8 @@ data/cache/
 data/raw/
 
 # Generated analysis outputs
-reports/
+reports/*
+!reports/.gitkeep
 *.png
 *.pdf
 

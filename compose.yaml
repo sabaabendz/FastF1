@@ -15,5 +15,44 @@
       timeout: 5s
       retries: 10
 
+  dashboard:
+    build: .
+    command:
+      - python
+      - -m
+      - streamlit
+      - run
+      - src/f1_strategy/dashboard.py
+      - --server.address=0.0.0.0
+      - --server.port=8501
+    ports:
+      - "${STREAMLIT_PORT:-8501}:8501"
+    volumes:
+      - ./reports:/app/reports:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  pipeline:
+    profiles: [pipeline]
+    build: .
+    command:
+      - sh
+      - -c
+      - >-
+        python scripts/load_to_postgres.py &&
+        python scripts/clean_race_data.py &&
+        python scripts/simulate_pit_strategy.py
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-f1_strategy}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-f1_strategy}
+    volumes:
+      - ./reports:/app/reports
+      - openf1_cache:/app/data/cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   postgres_data:
+  openf1_cache:

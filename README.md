@@ -4,7 +4,7 @@ A portfolio project that will estimate tyre degradation and simulate pit strateg
 
 ## Current phase
 
-Phase 5 — pit-strategy simulator prototype complete. See [docs/phase1.md](docs/phase1.md) for setup and exploration, [docs/phase2.md](docs/phase2.md) for the database design, [docs/phase3.md](docs/phase3.md) for cleaning and features, [docs/phase4.md](docs/phase4.md) for model results, and [docs/phase5.md](docs/phase5.md) for the simulator and its assumptions.
+Phase 6 — dashboard and Docker packaging. See [docs/phase1.md](docs/phase1.md) through [docs/phase5.md](docs/phase5.md) for the data pipeline and model decisions, and [docs/phase6.md](docs/phase6.md) for running the dashboard and containers.
 
 ## Data source
 
@@ -30,4 +30,14 @@ Start PostgreSQL and load the sample race:
 docker compose up -d postgres
 python scripts/load_to_postgres.py
 ```
+
+Generate the cleaning audit and strategy ranking, then start the dashboard locally:
+
+```powershell
+python scripts/clean_race_data.py
+python scripts/simulate_pit_strategy.py
+python -m streamlit run src/f1_strategy/dashboard.py
+```
+
+The dashboard opens at `http://localhost:8501`. See [docs/phase6.md](docs/phase6.md) for the container workflow.
 
