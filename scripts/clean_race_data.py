@@ -16,6 +16,8 @@ from load_race_session import RaceSessionData
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_cleaning_audit.csv"
 SESSION_KEY = 9472
+FUEL_BURN_KG_PER_LAP = 1.7
+FUEL_EFFECT_SECONDS_PER_KG = 0.03
 
 
 def read_frame(
@@ -212,6 +214,33 @@ def add_cleaning_flags(
     return result.sort_values(["driver_number", "lap_number"]).reset_index(drop=True)
 
 
+def add_fuel_correction(
+    laps: pd.DataFrame,
+    race_lap_count: int,
+    fuel_burn_kg_per_lap: float = FUEL_BURN_KG_PER_LAP,
+    seconds_per_kg: float = FUEL_EFFECT_SECONDS_PER_KG,
+) -> pd.DataFrame:
+    """Estimate a common low-fuel reference time using a linear fuel model.
+
+    Fuel load is not measured in this dataset, so the two parameters are
+    explicit assumptions and should be varied in sensitivity analysis.
+    """
+    result = laps.copy()
+    laps_remaining_including_current = (
+        race_lap_count - result["lap_number"] + 1
+    ).clip(lower=0)
+    result["estimated_fuel_kg_at_lap_start"] = (
+        laps_remaining_including_current * fuel_burn_kg_per_lap
+    )
+    result["estimated_fuel_penalty_seconds"] = (
+        result["estimated_fuel_kg_at_lap_start"] * seconds_per_kg
+    )
+    result["fuel_corrected_lap_time"] = (
+        result["lap_duration"] - result["estimated_fuel_penalty_seconds"]
+    )
+    return result
+
+
 def main() -> None:
     load_dotenv(PROJECT_ROOT / ".env")
     database_url = os.getenv("DATABASE_URL")
@@ -225,6 +254,8 @@ def main() -> None:
         race.weather,
         race.race_control,
     )
+    race_lap_count = int(audited_laps["lap_number"].max())
+    audited_laps = add_fuel_correction(audited_laps, race_lap_count)
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     audited_laps.to_csv(OUTPUT_PATH, index=False)
 
@@ -238,8 +269,12 @@ def main() -> None:
     print(f"Wet records: {int(audited_laps['is_wet_lap'].sum())}")
     print(f"Unmatched weather records: {int((~audited_laps['weather_matched']).sum())}")
     print(
-        "Model-eligible records before fuel correction: "
+        "Model-eligible records with estimated fuel correction: "
         f"{int(audited_laps['keep_for_degradation_model'].sum())}"
+    )
+    print(
+        "Estimated time gain per lap of fuel burned: "
+        f"{FUEL_BURN_KG_PER_LAP * FUEL_EFFECT_SECONDS_PER_KG:.3f} seconds"
     )
 
 
