@@ -40,5 +40,5 @@ python scripts/compare_actual_result.py
 python -m streamlit run src/f1_strategy/dashboard.py
 ```
 
-The dashboard opens at `http://localhost:8501`. It includes a retrospective comparison with Verstappen's actual Bahrain 2024 result. See [docs/actual_comparison.md](docs/actual_comparison.md) for the numbers and important validation caveats, and [docs/phase6.md](docs/phase6.md) for the container workflow.
+The dashboard opens at `http://localhost:8501`. It includes a retrospective leave-one-driver-out comparison for all 20 classified drivers from Bahrain 2024. See [docs/actual_comparison.md](docs/actual_comparison.md) for the results and validation caveats, and [docs/phase6.md](docs/phase6.md) for the container workflow.
 

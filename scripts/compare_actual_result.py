@@ -1,97 +1,167 @@
-"""Compare the simulator replay of Verstappen's Bahrain strategy with the result."""
+"""Replay every classified Bahrain 2024 driver's observed race strategy."""
 
 from pathlib import Path
 
 import pandas as pd
 
+from simulate_pit_strategy import (
+    PIT_LOSS_SECONDS,
+    add_compound_age_feature,
+    build_strategy_model,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-STRATEGY_RESULTS_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_strategy_results.csv"
-COMPARISON_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_actual_comparison.csv"
+AUDIT_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_cleaning_audit.csv"
+COMPARISON_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_driver_comparison.csv"
 
-# Official FIA classification: 1:31:44.742 after 57 laps.
-ACTUAL_WINNER = "Max Verstappen"
-ACTUAL_FINISH_SECONDS = 1 * 3600 + 31 * 60 + 44.742
-ACTUAL_PIT_LAPS = "17,37"
-ACTUAL_COMPOUNDS = "SOFT-HARD-SOFT"
+# Official FIA final classification: position, driver name, completed laps, time.
+# The elapsed-time values include the hours component when the race exceeds one hour.
+OFFICIAL_RESULTS = {
+    1: (1, "Max Verstappen", 57, "1:31:44.742"),
+    11: (2, "Sergio Perez", 57, "1:32:07.199"),
+    55: (3, "Carlos Sainz", 57, "1:32:09.852"),
+    16: (4, "Charles Leclerc", 57, "1:32:24.411"),
+    63: (5, "George Russell", 57, "1:32:31.530"),
+    4: (6, "Lando Norris", 57, "1:32:33.200"),
+    44: (7, "Lewis Hamilton", 57, "1:32:35.066"),
+    81: (8, "Oscar Piastri", 57, "1:32:40.824"),
+    14: (9, "Fernando Alonso", 57, "1:32:59.629"),
+    18: (10, "Lance Stroll", 57, "1:33:17.958"),
+    24: (11, "Zhou Guanyu", 56, "1:31:51.501"),
+    20: (12, "Kevin Magnussen", 56, "1:31:53.058"),
+    3: (13, "Daniel Ricciardo", 56, "1:31:53.700"),
+    22: (14, "Yuki Tsunoda", 56, "1:31:54.224"),
+    23: (15, "Alexander Albon", 56, "1:31:56.628"),
+    27: (16, "Nico Hulkenberg", 56, "1:32:02.374"),
+    31: (17, "Esteban Ocon", 56, "1:32:16.192"),
+    10: (18, "Pierre Gasly", 56, "1:32:17.159"),
+    77: (19, "Valtteri Bottas", 56, "1:33:07.972"),
+    2: (20, "Logan Sargeant", 55, "1:32:05.537"),
+}
 
 
-def build_comparison(strategy_results: pd.DataFrame) -> pd.DataFrame:
-    """Compare the model's replay of the winner's exact observed plan to reality."""
-    actual_plan = strategy_results.loc[
-        strategy_results["pit_laps_after"].eq(ACTUAL_PIT_LAPS)
-        & strategy_results["stint_compounds"].eq(ACTUAL_COMPOUNDS)
-    ]
-    if len(actual_plan) != 1:
-        raise ValueError(
-            "Could not find the winner's observed two-stop plan in the simulator output. "
-            "Regenerate it with scripts/simulate_pit_strategy.py."
+def parse_race_time(value: str) -> float:
+    """Convert an official H:MM:SS.mmm time string to elapsed seconds."""
+    hours, minutes, seconds = value.split(":")
+    return int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+
+
+def compare_drivers(audit: pd.DataFrame) -> pd.DataFrame:
+    """Use leave-one-driver-out fitting to replay each actual race strategy."""
+    eligible = audit.loc[audit["keep_for_degradation_model"]].dropna(
+        subset=["compound", "tyre_age", "fuel_corrected_lap_time"]
+    )
+    fuel_penalty_by_lap = (
+        audit.groupby("lap_number")["estimated_fuel_penalty_seconds"].mean().to_dict()
+    )
+    comparisons: list[dict[str, float | int | str]] = []
+
+    for driver_number, (position, driver_name, official_laps, official_time) in (
+        OFFICIAL_RESULTS.items()
+    ):
+        driver_laps = audit.loc[audit["driver_number"].eq(driver_number)].sort_values(
+            "lap_number"
+        )
+        if len(driver_laps) != official_laps:
+            raise ValueError(
+                f"Driver {driver_name} has {len(driver_laps)} stored laps; "
+                f"the FIA classification lists {official_laps}. Reload the race data."
+            )
+
+        training_laps = eligible.loc[eligible["driver_number"].ne(driver_number)]
+        if training_laps.empty:
+            raise ValueError(f"No training laps remain after holding out {driver_name}.")
+
+        model = build_strategy_model()
+        model.fit(
+            add_compound_age_feature(training_laps),
+            training_laps["fuel_corrected_lap_time"],
+        )
+        predicted_fuel_corrected = model.predict(add_compound_age_feature(driver_laps))
+        fuel_penalty = sum(
+            fuel_penalty_by_lap[int(lap)]
+            for lap in driver_laps["lap_number"]
+        )
+        stop_laps = driver_laps.loc[driver_laps["is_pit_stop_lap"], "lap_number"]
+        pit_laps_after = ",".join(str(int(lap)) for lap in stop_laps)
+        stint_compounds = "-".join(
+            driver_laps.drop_duplicates("stint_number")["compound"].astype(str)
+        )
+        stint_lengths = ",".join(
+            str(int(count))
+            for count in driver_laps.groupby("stint_number", sort=True).size()
+        )
+        actual_seconds = parse_race_time(official_time)
+        predicted_seconds = (
+            float(predicted_fuel_corrected.sum())
+            + fuel_penalty
+            + len(stop_laps) * PIT_LOSS_SECONDS
         )
 
-    replay = actual_plan.iloc[0]
-    best_supported = strategy_results.loc[
-        strategy_results["within_observed_tyre_age"]
-    ].iloc[0]
-    model_seconds = float(replay["predicted_race_time_seconds"])
-    error_seconds = model_seconds - ACTUAL_FINISH_SECONDS
-
-    return pd.DataFrame(
-        [
+        comparisons.append(
             {
-                "actual_winner": ACTUAL_WINNER,
-                "actual_finish_seconds": ACTUAL_FINISH_SECONDS,
-                "actual_pit_laps_after": ACTUAL_PIT_LAPS,
-                "actual_stint_compounds": ACTUAL_COMPOUNDS,
-                "actual_stint_lengths": str(replay["stint_lengths"]),
-                "model_replay_seconds": model_seconds,
-                "replay_error_seconds": error_seconds,
-                "replay_error_percent": error_seconds / ACTUAL_FINISH_SECONDS * 100,
-                "best_supported_compounds": best_supported["stint_compounds"],
-                "best_supported_pit_laps_after": best_supported["pit_laps_after"],
-                "best_supported_predicted_seconds": float(
-                    best_supported["predicted_race_time_seconds"]
-                ),
-                "best_supported_age_extrapolation_laps": int(
-                    best_supported["laps_beyond_observed_tyre_age"]
-                ),
+                "driver_number": driver_number,
+                "driver_name": driver_name,
+                "actual_position": position,
+                "actual_laps": official_laps,
+                "actual_time_seconds": actual_seconds,
+                "actual_time_official": official_time,
+                "actual_pit_stops": len(stop_laps),
+                "actual_pit_laps_after": pit_laps_after,
+                "actual_stint_compounds": stint_compounds,
+                "actual_stint_lengths": stint_lengths,
+                "predicted_time_seconds": predicted_seconds,
+                "error_seconds": predicted_seconds - actual_seconds,
+                "absolute_error_seconds": abs(predicted_seconds - actual_seconds),
             }
-        ]
-    )
+        )
+
+    return pd.DataFrame(comparisons).sort_values("actual_position").reset_index(drop=True)
 
 
 def main() -> None:
-    if not STRATEGY_RESULTS_PATH.exists():
+    if not AUDIT_PATH.exists():
         raise FileNotFoundError(
-            "Strategy ranking is missing. Run scripts/simulate_pit_strategy.py first."
+            "Cleaning audit is missing. Run scripts/clean_race_data.py first."
         )
 
-    strategy_results = pd.read_csv(STRATEGY_RESULTS_PATH)
-    comparison = build_comparison(strategy_results)
+    comparison = compare_drivers(pd.read_csv(AUDIT_PATH))
     COMPARISON_PATH.parent.mkdir(parents=True, exist_ok=True)
     comparison.to_csv(COMPARISON_PATH, index=False)
 
-    row = comparison.iloc[0]
-    print(f"Actual winner: {row['actual_winner']}")
-    print(
-        "Actual result: "
-        f"{int(row['actual_finish_seconds'] // 3600)}:"
-        f"{int(row['actual_finish_seconds'] % 3600 // 60):02d}:"
-        f"{row['actual_finish_seconds'] % 60:06.3f}"
+    errors = comparison["error_seconds"]
+    mae = comparison["absolute_error_seconds"].mean()
+    rmse = (errors.pow(2).mean()) ** 0.5
+    mean_bias = errors.mean()
+    winner_error = float(
+        comparison.loc[comparison["driver_number"].eq(1), "error_seconds"].iloc[0]
     )
+    print(f"Drivers compared: {len(comparison)}")
+    print(f"Mean absolute error: {mae:.3f} seconds")
+    print(f"Root mean squared error: {rmse:.3f} seconds")
+    print(f"Mean signed error (model - actual): {mean_bias:+.3f} seconds")
+    print(f"Winner replay error: {winner_error:+.3f} seconds")
+    print("Driver comparison:")
     print(
-        "Actual strategy replay: "
-        f"{row['actual_stint_compounds']} at pit laps "
-        f"{row['actual_pit_laps_after']} -> "
-        f"{row['model_replay_seconds']:.3f}s"
-    )
-    print(
-        f"Replay error: {row['replay_error_seconds']:+.3f}s "
-        f"({row['replay_error_percent']:+.3f}%)"
+        comparison[
+            [
+                "actual_position",
+                "driver_name",
+                "actual_stint_compounds",
+                "actual_pit_laps_after",
+                "actual_time_official",
+                "predicted_time_seconds",
+                "error_seconds",
+            ]
+        ].to_string(index=False, formatters={"predicted_time_seconds": "{:.3f}".format,
+                                             "error_seconds": "{:+.3f}".format})
     )
     print(f"Saved comparison: {COMPARISON_PATH}")
     print(
-        "Caution: this is a retrospective, in-sample replay. The degradation "
-        "model was fitted using laps from the same race, including the winner."
+        "Caution: leave-one-driver-out prevents fitting on the evaluated driver's "
+        "laps, but other drivers from the same race are still in the training set. "
+        "This is not a pre-race test on an unseen Grand Prix."
     )
 
 

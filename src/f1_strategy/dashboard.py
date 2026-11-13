@@ -9,7 +9,7 @@ import altair as alt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STRATEGY_RESULTS_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_strategy_results.csv"
-ACTUAL_COMPARISON_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_actual_comparison.csv"
+ACTUAL_COMPARISON_PATH = PROJECT_ROOT / "reports" / "bahrain_2024_driver_comparison.csv"
 REQUIRED_COLUMNS = {
     "pit_stops",
     "pit_laps_after",
@@ -109,48 +109,110 @@ def main() -> None:
 
     if not ACTUAL_COMPARISON_PATH.exists():
         st.warning(
-            "The real-race comparison has not been generated yet. Run "
-            "scripts/compare_actual_result.py after the strategy simulator."
+            "The all-driver comparison has not been generated yet. Run "
+            "scripts/compare_actual_result.py after cleaning the race data."
         )
     else:
-        comparison = pd.read_csv(ACTUAL_COMPARISON_PATH).iloc[0]
+        comparison = pd.read_csv(ACTUAL_COMPARISON_PATH)
+        mae = comparison["absolute_error_seconds"].mean()
+        rmse = (comparison["error_seconds"].pow(2).mean()) ** 0.5
+        bias = comparison["error_seconds"].mean()
+        winner_error = float(
+            comparison.loc[
+                comparison["driver_number"].eq(1), "error_seconds"
+            ].iloc[0]
+        )
         st.markdown('<div class="section-kicker">Reality check · Bahrain 2024</div>', unsafe_allow_html=True)
-        st.subheader("Model replay vs. the actual race")
-        comparison_columns = st.columns(3)
+        st.subheader("Actual result vs. model replay · all 20 drivers")
+        comparison_columns = st.columns(4)
         comparison_columns[0].metric(
-            "Actual winner · Max Verstappen",
-            "1:31:44.742",
-            help="Official FIA classified race time over 57 laps.",
+            "Drivers compared",
+            f"{len(comparison)}",
+            help="Each driver's actual tyre sequence is replayed by a model fitted without that driver's laps.",
         )
         comparison_columns[1].metric(
-            "Model replay · actual strategy",
-            format_race_time(comparison["model_replay_seconds"]),
-            help="The simulator's estimate for Soft–Hard–Soft, stopping after laps 17 and 37.",
+            "Mean absolute error",
+            f"{mae:.1f} s",
+            help="Average absolute difference between model replay and official elapsed time.",
         )
         comparison_columns[2].metric(
-            "Replay gap",
-            f"{comparison['replay_error_seconds']:+,.3f} s",
-            delta=f"{comparison['replay_error_percent']:+.2f}% vs actual",
-            delta_color="inverse",
-            help="Positive means the model estimated a slower race time than the official result.",
+            "Mean signed error",
+            f"{bias:+.1f} s",
+            help="Positive means the model tends to estimate slower race times.",
         )
+        comparison_columns[3].metric("Winner replay error", f"{winner_error:+.1f} s")
         st.markdown(
-            f"**Actual strategy:** {comparison['actual_stint_compounds'].replace('-', '–')} · "
-            f"pit after laps {comparison['actual_pit_laps_after']} · "
-            f"stints {comparison['actual_stint_lengths']} laps. "
-            f"The fastest model plan within observed tyre ages was "
-            f"**{comparison['best_supported_compounds'].replace('-', '–')}**, "
-            f"pitting after laps {comparison['best_supported_pit_laps_after']} "
-            f"(estimated {comparison['best_supported_predicted_seconds']:.3f} s)."
+            f"RMSE: **{rmse:.1f} s**. The chart compares each driver's official elapsed time "
+            "with a model replay of that driver's observed compounds and pit laps."
+        )
+        scatter = alt.Chart(comparison).mark_circle(size=100, opacity=0.85).encode(
+            x=alt.X("actual_time_seconds:Q", title="Official elapsed time (seconds)"),
+            y=alt.Y("predicted_time_seconds:Q", title="Model replay time (seconds)"),
+            color=alt.Color("actual_position:O", title="Actual finish position", scale=alt.Scale(scheme="redblue", reverse=True)),
+            tooltip=[
+                alt.Tooltip("actual_position:Q", title="Actual position"),
+                alt.Tooltip("driver_name:N", title="Driver"),
+                alt.Tooltip("actual_stint_compounds:N", title="Tyre sequence"),
+                alt.Tooltip("actual_pit_laps_after:N", title="Pit after lap(s)"),
+                alt.Tooltip("actual_time_official:N", title="Official time"),
+                alt.Tooltip("predicted_time_seconds:Q", title="Model time (s)", format=".1f"),
+                alt.Tooltip("error_seconds:Q", title="Model - actual (s)", format="+.1f"),
+            ],
+        )
+        line_limits = [
+            min(comparison["actual_time_seconds"].min(), comparison["predicted_time_seconds"].min()),
+            max(comparison["actual_time_seconds"].max(), comparison["predicted_time_seconds"].max()),
+        ]
+        reference_line = alt.Chart(
+            pd.DataFrame({"actual_time_seconds": line_limits, "predicted_time_seconds": line_limits})
+        ).mark_line(color="#aaa9ad", strokeDash=[6, 4]).encode(
+            x="actual_time_seconds:Q", y="predicted_time_seconds:Q"
+        )
+        chart = (reference_line + scatter).properties(height=340).interactive()
+        st.altair_chart(chart, width="stretch")
+        st.caption("The dashed diagonal marks a perfect time match. Points farther from it have larger replay errors.")
+
+        comparison_table = comparison[
+            [
+                "actual_position",
+                "driver_name",
+                "actual_laps",
+                "actual_stint_compounds",
+                "actual_pit_laps_after",
+                "actual_time_official",
+                "predicted_time_seconds",
+                "error_seconds",
+            ]
+        ].rename(
+            columns={
+                "actual_position": "Actual P",
+                "driver_name": "Driver",
+                "actual_laps": "Laps",
+                "actual_stint_compounds": "Actual tyre sequence",
+                "actual_pit_laps_after": "Pit after lap(s)",
+                "actual_time_official": "Official time",
+                "predicted_time_seconds": "Model replay (s)",
+                "error_seconds": "Error (s)",
+            }
+        )
+        st.dataframe(
+            comparison_table,
+            hide_index=True,
+            width="stretch",
+            column_config={
+                "Model replay (s)": st.column_config.NumberColumn(format="%.3f"),
+                "Error (s)": st.column_config.NumberColumn(format="%+.3f"),
+            },
         )
         st.warning(
-            "Retrospective sanity check only: the model was trained on this same race, "
-            "including the winner's laps. Its replay is not an independent forecast, "
-            "assumes new tyres at age one, and the alternative strategy was never raced."
+            "Retrospective driver holdout: each replay model excludes that driver's laps, "
+            "but trains on the other drivers from this same Grand Prix. This is not a "
+            "pre-race test on an unseen event. It uses approximate fuel and pit loss and "
+            "does not model driver/car pace, traffic, or race incidents."
         )
         st.markdown(
             'Sources: [FIA final race classification](https://api.fia.com/sites/default/files/doc_32_-_2024_bahrain_grand_prix_-_final_race_classification.pdf) · '
-            '[FIA race report and strategy timeline](https://api.fia.com/news/f1-verstappen-takes-bahrain-win-ahead-perez-red-bull-seal-1-2-finish)',
+            '[OpenF1 race data documentation](https://openf1.org/docs/)',
             unsafe_allow_html=False,
         )
 
