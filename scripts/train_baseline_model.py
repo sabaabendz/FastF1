@@ -12,6 +12,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
+from xgboost import XGBRegressor
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -88,6 +89,20 @@ def main() -> None:
                 n_jobs=-1,
             )
         ),
+        "xgboost": build_model(
+            XGBRegressor(
+                n_estimators=300,
+                max_depth=2,
+                learning_rate=0.03,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                reg_lambda=5.0,
+                objective="reg:squarederror",
+                random_state=42,
+                n_jobs=-1,
+                verbosity=0,
+            )
+        ),
     }
     predictions_by_model = {}
 
@@ -116,6 +131,7 @@ def main() -> None:
             "actual_fuel_corrected_lap_time": test_target.to_numpy(),
             "linear_prediction": predictions_by_model["linear"],
             "random_forest_prediction": predictions_by_model["random_forest"],
+            "xgboost_prediction": predictions_by_model["xgboost"],
             "mean_baseline_prediction": baseline_predictions,
         }
     )
